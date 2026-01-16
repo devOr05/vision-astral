@@ -58,7 +58,12 @@ export default function Home() {
 }
 
 function ConnectionStatus() {
-  const [isOnline, setIsOnline] = React.useState(true);
+  const [isOnline, setIsOnline] = React.useState(() => {
+    if (typeof window !== 'undefined') {
+      return navigator.onLine;
+    }
+    return true;
+  });
 
   React.useEffect(() => {
     setIsOnline(navigator.onLine);

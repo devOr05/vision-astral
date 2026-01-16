@@ -23,6 +23,11 @@ export default function FaceDetector() {
     const [newFaceName, setNewFaceName] = useState('');
     const [currentDescriptor, setCurrentDescriptor] = useState<Float32Array | null>(null);
 
+    // New biometric states
+    const [brainSide, setBrainSide] = useState<{ side: string, score: number } | null>(null);
+    const [facialLines, setFacialLines] = useState<string>('');
+    const emotionHistoryRef = useRef<faceapi.FaceExpressions[]>([]);
+
     // Sync state with refs
     useEffect(() => {
         isRegisteringRef.current = isRegistering;
@@ -65,6 +70,7 @@ export default function FaceDetector() {
                 console.error("Error loading models:", err);
                 setError(`Failed to load AI models: ${err instanceof Error ? err.message : String(err)}`);
                 setInitializing(false);
+                startVideo(); // Always try to start video even if models fail
             }
         };
 
@@ -126,6 +132,49 @@ export default function FaceDetector() {
                 setError("Camera access denied");
                 setInitializing(false);
             });
+    };
+
+    const analyzeBrainSide = (landmarks: faceapi.FaceLandmarks68) => {
+        const leftEye = landmarks.getLeftEye();
+        const rightEye = landmarks.getRightEye();
+        const nose = landmarks.getNose();
+        const jaw = landmarks.getJawOutline();
+
+        // Very simplified logic for "Aesthetic/Mystical" predominance
+        // We look at subtle differences in eye size or jaw tilt
+        const leftEyeWidth = leftEye[3].x - leftEye[0].x;
+        const rightEyeWidth = rightEye[3].x - rightEye[0].x;
+
+        const diff = (leftEyeWidth - rightEyeWidth) / ((leftEyeWidth + rightEyeWidth) / 2);
+
+        if (Math.abs(diff) < 0.02) {
+            return { side: 'EQUILIBRADO', score: 50 };
+        }
+        return diff > 0
+            ? { side: 'DERECHO (CREATIVO)', score: Math.min(100, 50 + diff * 500) }
+            : { side: 'IZQUIERDO (LÓGICO)', score: Math.min(100, 50 - diff * 500) };
+    };
+
+    const analyzeEmotionsToLines = (expressions: faceapi.FaceExpressions) => {
+        // Add to history
+        emotionHistoryRef.current.push(expressions);
+        if (emotionHistoryRef.current.length > 50) emotionHistoryRef.current.shift();
+
+        // Get dominant emotion
+        const entries = Object.entries(expressions);
+        const dominant = entries.reduce((a, b) => a[1] > b[1] ? a : b)[0];
+
+        const readings: Record<string, string> = {
+            neutral: "Líneas de equilibrio ancestral. Refleja una paz interior profunda.",
+            happy: "Surcos de luz solar. Irradia una energía vital contagiosa.",
+            sad: "Senderos de sabiduría líquida. Capacidad de sentir el universo.",
+            angry: "Trazos de fuego volcánico. Poder de transmutación y voluntad.",
+            fearful: "Vibraciones de alerta cósmica. Intuición altamente desarrollada.",
+            disgusted: "Filtros de discernimiento etéreo. Protege su esencia con rigor.",
+            surprised: "Aperturas al asombro infinito. Siempre listo para lo nuevo."
+        };
+
+        return readings[dominant] || "Líneas en flujo constante. Aura en transformación.";
     };
 
     const handleVideoPlay = () => {
@@ -220,8 +269,16 @@ export default function FaceDetector() {
             // Update the "current" descriptor for registration purposes if exactly one face
             if (detections.length === 1) {
                 setCurrentDescriptor(detections[0].descriptor);
+
+                // Update biometrics
+                const brainData = analyzeBrainSide(detections[0].landmarks);
+                const lineReading = analyzeEmotionsToLines(detections[0].expressions);
+                setBrainSide(brainData);
+                setFacialLines(lineReading);
             } else {
                 setCurrentDescriptor(null);
+                setBrainSide(null);
+                setFacialLines('');
             }
 
         }, 100);
@@ -295,12 +352,46 @@ export default function FaceDetector() {
             />
 
             {/* UI Overlay */}
-            <div className="absolute top-4 left-4 z-10 flex items-center gap-2 px-4 py-2 bg-black/50 backdrop-blur-md rounded-full border border-white/10">
-                <ScanFace className={`w-5 h-5 ${facesDetectedDisplay > 0 ? 'text-green-400' : 'text-gray-400'}`} />
-                <span className="font-mono text-sm text-white">
-                    {facesDetectedDisplay > 0 ? `${facesDetectedDisplay} TARGET(S) LOCKED` : 'SEARCHING...'}
-                </span>
+            <div className="absolute top-4 left-4 z-10 flex flex-col gap-2">
+                <div className="flex items-center gap-2 px-4 py-2 bg-black/50 backdrop-blur-md rounded-full border border-white/10">
+                    <ScanFace className={`w-5 h-5 ${facesDetectedDisplay > 0 ? 'text-green-400' : 'text-gray-400'}`} />
+                    <span className="font-mono text-sm text-white uppercase tracking-wider">
+                        {facesDetectedDisplay > 0 ? `${facesDetectedDisplay} TARGET(S) LOCKED` : 'SEARCHING...'}
+                    </span>
+                </div>
             </div>
+
+            {/* Biometric Sidebar */}
+            {facesDetectedDisplay === 1 && brainSide && (
+                <div className="absolute top-4 right-4 z-10 w-64 flex flex-col gap-3 animate-in fade-in slide-in-from-right-4 duration-500">
+                    <div className="p-4 bg-black/60 backdrop-blur-xl border border-accent/30 rounded-lg shadow-2xl">
+                        <h4 className="text-[10px] text-accent font-bold font-mono tracking-[0.2em] mb-3 uppercase">Análisis Biométrico</h4>
+
+                        <div className="space-y-4">
+                            <div>
+                                <div className="flex justify-between text-[9px] text-gray-400 font-mono mb-1">
+                                    <span>PREDOMINIO CEREBRAL</span>
+                                    <span>{Math.round(brainSide.score)}%</span>
+                                </div>
+                                <div className="text-sm text-white font-bold font-mono truncate">{brainSide.side}</div>
+                                <div className="mt-1 h-1 w-full bg-white/10 rounded-full overflow-hidden">
+                                    <div
+                                        className="h-full bg-accent transition-all duration-1000"
+                                        style={{ width: `${brainSide.score}%` }}
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="pt-2 border-t border-white/10">
+                                <div className="text-[9px] text-gray-400 font-mono mb-1 uppercase tracking-wider">Lectura de Líneas</div>
+                                <div className="text-[11px] text-accent/90 italic leading-relaxed font-mono">
+                                    "{facialLines}"
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <div className="scan-line pointer-events-none"></div>
 

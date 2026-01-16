@@ -17,7 +17,7 @@ export default function Home() {
 
       <div className="z-10 flex flex-col items-center gap-8 w-full max-w-5xl">
         <header className="text-center space-y-4">
-          <h1 className="text-5xl font-bold tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-white to-gray-500">
+          <h1 className="text-5xl font-bold tracking-tighter text-white">
             ASTRAL VISION
           </h1>
           <p className="text-accent/60 font-mono text-sm tracking-[0.2em] uppercase">

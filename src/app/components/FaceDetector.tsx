@@ -45,6 +45,7 @@ export default function FaceDetector() {
         };
         window.addEventListener('trigger-astral-advice', handleExternalTrigger);
         return () => window.removeEventListener('trigger-astral-advice', handleExternalTrigger);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [identifiedMetadata]);
 
     // Sync state with refs

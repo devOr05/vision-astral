@@ -296,8 +296,8 @@ export default function FaceDetector() {
             )}
 
             {error && (
-                <div className="absolute inset-0 flex items-center justify-center z-50 bg-black/80">
-                    <p className="text-red-500 font-mono text-xl">{error}</p>
+                <div className="absolute top-4 right-4 z-50 p-3 bg-red-500/20 border border-red-500/50 backdrop-blur-md rounded text-red-500 text-[10px] font-mono animate-pulse">
+                    <span className="font-bold">⚠ OFFLINE MODE / AI MODULES NOT LOADED</span>
                 </div>
             )}
 

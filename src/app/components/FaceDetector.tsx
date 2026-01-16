@@ -52,16 +52,18 @@ export default function FaceDetector() {
         const loadModels = async () => {
             const MODEL_URL = '/models';
             try {
+                console.log("Starting model loading...");
                 await Promise.all([
                     faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
                     faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
                     faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
                     faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL)
                 ]);
+                console.log("Models loaded successfully.");
                 startVideo();
             } catch (err) {
                 console.error("Error loading models:", err);
-                setError("Failed to load AI models");
+                setError(`Failed to load AI models: ${err instanceof Error ? err.message : String(err)}`);
                 setInitializing(false);
             }
         };
@@ -204,8 +206,10 @@ export default function FaceDetector() {
 
                     // Add label
                     context.fillStyle = label.includes("Unknown") ? '#00f0ff' : '#00ff00';
-                    context.font = '16px monospace';
-                    context.fillText(label, x, y - 10);
+                    context.font = 'bold 24px monospace'; // Bolder and larger
+                    context.shadowColor = 'black';
+                    context.shadowBlur = 4;
+                    context.fillText(label.toUpperCase(), x, y - 15);
                 });
             }
 

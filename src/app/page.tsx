@@ -1,3 +1,4 @@
+import React from 'react';
 import dynamic from 'next/dynamic';
 
 const FaceDetector = dynamic(() => import('./components/FaceDetector'), {
@@ -26,21 +27,45 @@ export default function Home() {
 
         <FaceDetector />
 
-        <div className="grid grid-cols-3 gap-4 w-full max-w-4xl opacity-50">
-          <div className="p-4 border border-white/10 rounded bg-white/5 backdrop-blur-sm text-center">
-            <div className="text-xs text-gray-400 font-mono mb-1">LATENCY</div>
-            <div className="text-accent font-bold">12ms</div>
-          </div>
-          <div className="p-4 border border-white/10 rounded bg-white/5 backdrop-blur-sm text-center">
-            <div className="text-xs text-gray-400 font-mono mb-1">ACCURACY</div>
-            <div className="text-accent font-bold">99.8%</div>
-          </div>
-          <div className="p-4 border border-white/10 rounded bg-white/5 backdrop-blur-sm text-center">
-            <div className="text-xs text-gray-400 font-mono mb-1">STATUS</div>
-            <div className="text-green-400 font-bold animate-pulse">ONLINE</div>
-          </div>
-        </div>
+        <ConnectionStatus />
       </div>
     </main>
+  );
+}
+
+function ConnectionStatus() {
+  const [isOnline, setIsOnline] = React.useState(true);
+
+  React.useEffect(() => {
+    setIsOnline(navigator.onLine);
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  return (
+    <div className="grid grid-cols-3 gap-4 w-full max-w-4xl opacity-50">
+      <div className="p-4 border border-white/10 rounded bg-white/5 backdrop-blur-sm text-center">
+        <div className="text-xs text-gray-400 font-mono mb-1">LATENCY</div>
+        <div className="text-accent font-bold">12ms</div>
+      </div>
+      <div className="p-4 border border-white/10 rounded bg-white/5 backdrop-blur-sm text-center">
+        <div className="text-xs text-gray-400 font-mono mb-1">ACCURACY</div>
+        <div className="text-accent font-bold">99.8%</div>
+      </div>
+      <div className="p-4 border border-white/10 rounded bg-white/5 backdrop-blur-sm text-center">
+        <div className="text-xs text-gray-400 font-mono mb-1">STATUS</div>
+        <div className={`font-bold ${isOnline ? 'text-green-400 animate-pulse' : 'text-red-500'}`}>
+          {isOnline ? 'ONLINE' : 'OFFLINE'}
+        </div>
+      </div>
+    </div>
   );
 }

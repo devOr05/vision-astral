@@ -15,7 +15,7 @@ const FaceDetector = dynamic(() => import('./components/FaceDetector'), {
 export default function Home() {
   React.useEffect(() => {
     if ('serviceWorker' in navigator && window.location.protocol === 'https:') {
-      window.addEventListener('load', () => {
+      const registerSW = () => {
         navigator.serviceWorker.register('/sw.js').then(
           (registration) => {
             console.log('PWA: ServiceWorker registration successful with scope: ', registration.scope);
@@ -24,7 +24,14 @@ export default function Home() {
             console.log('PWA: ServiceWorker registration failed: ', err);
           }
         );
-      });
+      };
+
+      if (document.readyState === 'complete') {
+        registerSW();
+      } else {
+        window.addEventListener('load', registerSW);
+        return () => window.removeEventListener('load', registerSW);
+      }
     }
   }, []);
 

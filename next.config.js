@@ -20,6 +20,7 @@ const withPWA = require('next-pwa')({
     dest: 'public',
     register: true,
     skipWaiting: true,
+    clientsClaim: true,
     disable: process.env.NODE_ENV === 'development',
     runtimeCaching: [
         {
@@ -36,6 +37,21 @@ const withPWA = require('next-pwa')({
                 },
             },
         },
+        // Aggressive Cache-Control for the app shell to ensure updates
+        {
+            urlPattern: /\/_next\/data\/.*\.json$/,
+            handler: 'NetworkFirst',
+            options: {
+                cacheName: 'next-data',
+            }
+        },
+        {
+            urlPattern: /\/_next\/static\/.*/,
+            handler: 'CacheFirst',
+            options: {
+                cacheName: 'static-assets',
+            }
+        },
         {
             urlPattern: /^https?.*/,
             handler: 'NetworkFirst',
@@ -50,4 +66,5 @@ const withPWA = require('next-pwa')({
 })
 
 module.exports = withPWA(nextConfig)
+
 

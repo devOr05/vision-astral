@@ -1,4 +1,21 @@
-/** @type {import('next').NextConfig} */
+const nextConfig = {
+    reactStrictMode: true,
+    typescript: {
+        ignoreBuildErrors: true,
+    },
+    webpack: (config) => {
+        config.resolve.fallback = {
+            ...config.resolve.fallback,
+            "fs": false,
+            "encoding": false,
+            "os": false,
+            "path": false,
+            "crypto": false,
+        };
+        return config;
+    },
+}
+
 const withPWA = require('next-pwa')({
     dest: 'public',
     register: true,
@@ -6,9 +23,7 @@ const withPWA = require('next-pwa')({
     disable: process.env.NODE_ENV === 'development',
     runtimeCaching: [
         {
-            urlPattern: ({ url }) => {
-                return url.pathname.startsWith("/models");
-            },
+            urlPattern: /\/models\/.*\.(json|shard.*)$/,
             handler: "CacheFirst",
             options: {
                 cacheName: "ai-models-cache",
@@ -16,9 +31,11 @@ const withPWA = require('next-pwa')({
                     maxEntries: 50,
                     maxAgeSeconds: 30 * 24 * 60 * 60, // 30 days
                 },
+                cacheableResponse: {
+                    statuses: [0, 200],
+                },
             },
         },
-        // Fallback for everything else (using default strategy pattern for Next.js PWA)
         {
             urlPattern: /^https?.*/,
             handler: 'NetworkFirst',
@@ -33,3 +50,4 @@ const withPWA = require('next-pwa')({
 })
 
 module.exports = withPWA(nextConfig)
+

@@ -21,12 +21,31 @@ export default function FaceDetector() {
     const [labeledDescriptors, setLabeledDescriptors] = useState<faceapi.LabeledFaceDescriptors[]>([]);
     const [isRegistering, setIsRegistering] = useState(false);
     const [newFaceName, setNewFaceName] = useState('');
+    const [birthDate, setBirthDate] = useState('');
+    const [birthTime, setBirthTime] = useState('');
+    const [birthPlace, setBirthPlace] = useState('');
     const [currentDescriptor, setCurrentDescriptor] = useState<Float32Array | null>(null);
 
     // New biometric states
     const [brainSide, setBrainSide] = useState<{ side: string, score: number } | null>(null);
     const [facialLines, setFacialLines] = useState<string>('');
+    const [identifiedMetadata, setIdentifiedMetadata] = useState<any>(null);
+    const [showAdvice, setShowAdvice] = useState(false);
+    const [adviceText, setAdviceText] = useState('');
     const emotionHistoryRef = useRef<faceapi.FaceExpressions[]>([]);
+
+    // Expose trigger for main page
+    useEffect(() => {
+        const handleExternalTrigger = () => {
+            if (identifiedMetadata) {
+                generateAdvice();
+            } else {
+                alert("Identidad no detectada. Por favor, acércate a la cámara.");
+            }
+        };
+        window.addEventListener('trigger-astral-advice', handleExternalTrigger);
+        return () => window.removeEventListener('trigger-astral-advice', handleExternalTrigger);
+    }, [identifiedMetadata]);
 
     // Sync state with refs
     useEffect(() => {
@@ -78,10 +97,15 @@ export default function FaceDetector() {
     }, []);
 
     const saveToLocalStorage = (descriptors: faceapi.LabeledFaceDescriptors[]) => {
-        const serializable = descriptors.map(d => ({
-            label: d.label,
-            descriptors: d.descriptors.map(arr => Array.from(arr))
-        }));
+        const serializable = descriptors.map(d => {
+            // Check if we have extra data for this label in a separate storage or extend the descriptor?
+            // Actually, face-api doesn't store metadata in LabeledFaceDescriptors easily.
+            // We'll store metadata in a separate key 'knownFacesMetadata'
+            return {
+                label: d.label,
+                descriptors: d.descriptors.map(arr => Array.from(arr))
+            };
+        });
         localStorage.setItem('knownFaces', JSON.stringify(serializable));
     };
 
@@ -89,34 +113,64 @@ export default function FaceDetector() {
         if (!newFaceName.trim() || !currentDescriptor) return;
 
         const nameToRegister = newFaceName.trim();
-        const existingIndex = labeledDescriptorsRef.current.findIndex(d => d.label === nameToRegister);
+        const metadata = {
+            birthDate,
+            birthTime,
+            birthPlace,
+            zodiac: getZodiacSign(birthDate),
+        };
 
+        // Save metadata separately to preserve it
+        const savedMetadata = localStorage.getItem('knownFacesMetadata');
+        const parsedMetadata = savedMetadata ? JSON.parse(savedMetadata) : {};
+        parsedMetadata[nameToRegister] = metadata;
+        localStorage.setItem('knownFacesMetadata', JSON.stringify(parsedMetadata));
+
+        const existingIndex = labeledDescriptorsRef.current.findIndex(d => d.label === nameToRegister);
         let updated: faceapi.LabeledFaceDescriptors[];
 
         if (existingIndex !== -1) {
-            // Merge with existing identity to improve accuracy
             const existing = labeledDescriptorsRef.current[existingIndex];
             const newDescriptors = [...existing.descriptors, currentDescriptor];
             const merged = new faceapi.LabeledFaceDescriptors(nameToRegister, newDescriptors);
-
             updated = [...labeledDescriptorsRef.current];
             updated[existingIndex] = merged;
         } else {
-            // Create new identity
-            const newDescriptor = new faceapi.LabeledFaceDescriptors(
-                nameToRegister,
-                [currentDescriptor]
-            );
+            const newDescriptor = new faceapi.LabeledFaceDescriptors(nameToRegister, [currentDescriptor]);
             updated = [...labeledDescriptorsRef.current, newDescriptor];
         }
 
         labeledDescriptorsRef.current = updated;
-        setLabeledDescriptors(updated); // Keep state in sync
+        setLabeledDescriptors(updated);
         saveToLocalStorage(updated);
 
         setIsRegistering(false);
         setNewFaceName('');
+        setBirthDate('');
+        setBirthTime('');
+        setBirthPlace('');
         setCurrentDescriptor(null);
+    };
+
+    const getZodiacSign = (dateStr: string) => {
+        if (!dateStr) return '';
+        const date = new Date(dateStr);
+        const day = date.getDate() + 1; // Basic normalization
+        const month = date.getMonth() + 1;
+
+        if ((month === 1 && day >= 20) || (month === 2 && day <= 18)) return "Acuario";
+        if ((month === 2 && day >= 19) || (month === 3 && day <= 20)) return "Piscis";
+        if ((month === 3 && day >= 21) || (month === 4 && day <= 19)) return "Aries";
+        if ((month === 4 && day >= 20) || (month === 5 && day <= 20)) return "Tauro";
+        if ((month === 5 && day >= 21) || (month === 6 && day <= 20)) return "Géminis";
+        if ((month === 6 && day >= 21) || (month === 7 && day <= 22)) return "Cáncer";
+        if ((month === 7 && day >= 23) || (month === 8 && day <= 22)) return "Leo";
+        if ((month === 8 && day >= 23) || (month === 9 && day <= 22)) return "Virgo";
+        if ((month === 9 && day >= 23) || (month === 10 && day <= 22)) return "Libra";
+        if ((month === 10 && day >= 23) || (month === 11 && day <= 21)) return "Escorpio";
+        if ((month === 11 && day >= 22) || (month === 12 && day <= 21)) return "Sagitario";
+        if ((month === 12 && day >= 22) || (month === 1 && day <= 19)) return "Capricornio";
+        return "";
     };
 
     const startVideo = () => {
@@ -177,6 +231,53 @@ export default function FaceDetector() {
         return readings[dominant] || "Líneas en flujo constante. Aura en transformación.";
     };
 
+    const generateAdvice = () => {
+        if (!identifiedMetadata) return;
+
+        const { zodiac } = identifiedMetadata;
+        const expressions = emotionHistoryRef.current[emotionHistoryRef.current.length - 1];
+        if (!expressions) return;
+
+        const entries = Object.entries(expressions);
+        const dominant = entries.reduce((a, b) => a[1] > b[1] ? a : b)[0];
+
+        const archetypes: Record<string, string> = {
+            "Aries": "Guerrero de Fuego", "Tauro": "Guardián de la Tierra", "Géminis": "Mensajero del Aire",
+            "Cáncer": "Protector del Agua", "Leo": "Rey del Sol", "Virgo": "Analista de la Pureza",
+            "Libra": "Arquitecto de la Armonía", "Escorpio": "Transmutador de Sombras", "Sagitario": "Buscador de la Verdad",
+            "Capricornio": "Constructor de Destinos", "Acuario": "Visionario Estelar", "Piscis": "Soñador del Infinito"
+        };
+
+        const archetype = archetypes[zodiac] || "Viajero Astral";
+        const brainInfo = brainSide?.side.includes("DERECHO") ? "intuición creativa" :
+            brainSide?.side.includes("IZQUIERDO") ? "razonamiento lógico" : "equilibrio mental";
+
+        const advices: Record<string, string[]> = {
+            neutral: [
+                "Tu centro está firme. Es un buen momento para tomar decisiones importantes desde la calma.",
+                "Esa serenidad es tu mayor poder hoy. Observa antes de actuar."
+            ],
+            happy: [
+                "Tu vibración alta atraerá nuevas oportunidades. No dejes de sonreír al universo.",
+                "Comparte esa alegría; es el combustible que tu arquetipo necesita hoy."
+            ],
+            sad: [
+                "Las aguas profundas de tu ser están sanando. Permítete sentir para liberar.",
+                "Usa este momento de introspección para reconectar con tu esencia más pura."
+            ],
+            angry: [
+                "Usa ese fuego para construir, no para destruir. Canaliza la energía en acción productiva.",
+                "Tu fuerza es inmensa hoy. Domínala y moverás montañas."
+            ]
+        };
+
+        const moodAdvices = advices[dominant] || ["Tu energía está en fase de cambio. Fluye con lo que el día te traiga."];
+        const randomAdvice = moodAdvices[Math.floor(Math.random() * moodAdvices.length)];
+
+        setAdviceText(`Como ${archetype}, tu ${brainInfo} está hoy en sintonía con el cosmos. Tus ${facialLines.charAt(0).toLowerCase() + facialLines.slice(1)} Además: ${randomAdvice}`);
+        setShowAdvice(true);
+    };
+
     const handleVideoPlay = () => {
         setInitializing(false);
         const video = videoRef.current;
@@ -215,6 +316,18 @@ export default function FaceDetector() {
                     if (faceMatcher) {
                         const bestMatch = faceMatcher.findBestMatch(detection.descriptor);
                         label = bestMatch.toString();
+
+                        if (!label.includes("Unknown")) {
+                            // Extract label name (name without score)
+                            const nameOnly = label.split(" ")[0];
+                            const savedMetadata = localStorage.getItem('knownFacesMetadata');
+                            if (savedMetadata) {
+                                const parsed = JSON.parse(savedMetadata);
+                                setIdentifiedMetadata(parsed[nameOnly] || null);
+                            }
+                        } else {
+                            setIdentifiedMetadata(null);
+                        }
                     }
 
                     // Draw corners
@@ -314,6 +427,36 @@ export default function FaceDetector() {
                             className="w-full bg-white/10 border border-white/20 rounded px-3 py-2 text-white mb-2 focus:outline-none focus:border-accent"
                             autoFocus
                         />
+                        <div className="grid grid-cols-2 gap-2 mb-2">
+                            <div className="space-y-1">
+                                <label className="text-[8px] text-gray-400 font-mono uppercase">Fecha Nacimiento</label>
+                                <input
+                                    type="date"
+                                    value={birthDate}
+                                    onChange={(e) => setBirthDate(e.target.value)}
+                                    className="w-full bg-white/10 border border-white/20 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-accent"
+                                />
+                            </div>
+                            <div className="space-y-1">
+                                <label className="text-[8px] text-gray-400 font-mono uppercase">Hora (Opcional)</label>
+                                <input
+                                    type="time"
+                                    value={birthTime}
+                                    onChange={(e) => setBirthTime(e.target.value)}
+                                    className="w-full bg-white/10 border border-white/20 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-accent"
+                                />
+                            </div>
+                        </div>
+                        <div className="space-y-1 mb-4">
+                            <label className="text-[8px] text-gray-400 font-mono uppercase">Lugar de Nacimiento</label>
+                            <input
+                                type="text"
+                                placeholder="Ciudad, País"
+                                value={birthPlace}
+                                onChange={(e) => setBirthPlace(e.target.value)}
+                                className="w-full bg-white/10 border border-white/20 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-accent"
+                            />
+                        </div>
                         {labeledDescriptors.some(d => d.label === newFaceName.trim()) && (
                             <p className="text-xs text-yellow-400 mb-4 font-mono">
                                 ⚠ UPDATING EXISTING ID DATA
@@ -388,7 +531,47 @@ export default function FaceDetector() {
                                     "{facialLines}"
                                 </div>
                             </div>
+
+                            {identifiedMetadata ? (
+                                <div className="pt-2 border-t border-white/10">
+                                    <div className="text-[9px] text-gray-400 font-mono mb-1 uppercase tracking-wider">Perfil Astral</div>
+                                    <div className="text-xs text-white font-mono">
+                                        Signo: <span className="text-accent">{identifiedMetadata.zodiac}</span>
+                                    </div>
+                                    <button
+                                        onClick={generateAdvice}
+                                        className="mt-3 w-full py-2 bg-accent/20 hover:bg-accent/30 border border-accent/40 rounded text-accent text-[10px] font-bold font-mono transition-colors uppercase tracking-widest"
+                                    >
+                                        Dar consejo del día
+                                    </button>
+                                </div>
+                            ) : (
+                                <div className="pt-2 border-t border-white/10">
+                                    <p className="text-[8px] text-gray-500 font-mono italic">
+                                        Identidad no registrada. Registra tu rostro para recibir consejos astrales.
+                                    </p>
+                                </div>
+                            )}
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Advice Modal */}
+            {showAdvice && (
+                <div className="absolute inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-lg animate-in fade-in duration-300">
+                    <div className="max-w-md p-8 bg-black border border-accent rounded-xl shadow-[0_0_50px_rgba(0,240,255,0.2)] text-center relative overflow-hidden">
+                        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-accent to-transparent"></div>
+                        <h3 className="text-accent font-bold mb-6 font-mono tracking-[0.3em] uppercase">Mensaje del Cosmos</h3>
+                        <p className="text-white text-lg font-mono leading-relaxed mb-8 italic">
+                            "{adviceText}"
+                        </p>
+                        <button
+                            onClick={() => setShowAdvice(false)}
+                            className="px-8 py-3 bg-accent text-black font-bold font-mono rounded-full hover:scale-105 transition-transform uppercase text-xs tracking-widest shadow-[0_0_20px_rgba(0,240,255,0.4)]"
+                        >
+                            Gracias, Universo
+                        </button>
                     </div>
                 </div>
             )}

@@ -45,13 +45,27 @@ export default function Home() {
             ASTRAL VISION
           </h1>
           <p className="text-accent/60 font-mono text-sm tracking-[0.2em] uppercase">
-            Biometric Analysis System v2.2
+            Biometric Analysis System v2.3
           </p>
         </header>
 
         <FaceDetector />
 
-        <ConnectionStatus />
+        <div className="flex flex-col gap-6 w-full max-w-4xl items-center">
+          <button
+            onClick={() => window.dispatchEvent(new CustomEvent('trigger-astral-advice'))}
+            className="group relative px-8 py-4 bg-transparent border-2 border-accent/50 rounded-full overflow-hidden transition-all hover:border-accent hover:scale-105 active:scale-95 shadow-[0_0_20px_rgba(0,240,255,0.1)]"
+          >
+            <div className="absolute inset-0 bg-accent/10 group-hover:bg-accent/20 transition-colors" />
+            <div className="relative flex items-center gap-3 text-accent font-mono font-bold tracking-[0.2em] uppercase text-sm">
+              <span className="w-2 h-2 rounded-full bg-accent animate-pulse" />
+              Dar consejo del día
+              <span className="w-2 h-2 rounded-full bg-accent animate-pulse" />
+            </div>
+          </button>
+
+          <ConnectionStatus />
+        </div>
       </div>
     </main>
   );

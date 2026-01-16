@@ -13,6 +13,21 @@ const FaceDetector = dynamic(() => import('./components/FaceDetector'), {
 });
 
 export default function Home() {
+  React.useEffect(() => {
+    if ('serviceWorker' in navigator && window.location.protocol === 'https:') {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').then(
+          (registration) => {
+            console.log('PWA: ServiceWorker registration successful with scope: ', registration.scope);
+          },
+          (err) => {
+            console.log('PWA: ServiceWorker registration failed: ', err);
+          }
+        );
+      });
+    }
+  }, []);
+
   return (
     <main className="min-h-screen flex flex-col items-center justify-center bg-black p-8 relative overflow-hidden">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(0,240,255,0.1)_0%,rgba(0,0,0,1)_100%)] pointer-events-none" />

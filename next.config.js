@@ -37,7 +37,14 @@ const withPWA = require('next-pwa')({
                 },
             },
         },
-        // Aggressive Cache-Control for the app shell to ensure updates
+        // Force caching of the root page and main assets for offline boot
+        {
+            urlPattern: ({ url }) => url.pathname === '/',
+            handler: 'StaleWhileRevalidate',
+            options: {
+                cacheName: 'app-shell',
+            }
+        },
         {
             urlPattern: /\/_next\/data\/.*\.json$/,
             handler: 'NetworkFirst',
@@ -66,5 +73,6 @@ const withPWA = require('next-pwa')({
 })
 
 module.exports = withPWA(nextConfig)
+
 
 

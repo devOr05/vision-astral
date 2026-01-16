@@ -45,7 +45,7 @@ export default function Home() {
             ASTRAL VISION
           </h1>
           <p className="text-accent/60 font-mono text-sm tracking-[0.2em] uppercase">
-            Biometric Analysis System v2.3
+            Biometric Analysis System v2.4
           </p>
         </header>
 

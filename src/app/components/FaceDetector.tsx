@@ -32,6 +32,7 @@ export default function FaceDetector() {
     const [identifiedMetadata, setIdentifiedMetadata] = useState<any>(null);
     const [showAdvice, setShowAdvice] = useState(false);
     const [adviceText, setAdviceText] = useState('');
+    const [photoSavedToday, setPhotoSavedToday] = useState(false);
     const emotionHistoryRef = useRef<faceapi.FaceExpressions[]>([]);
 
     // Expose trigger for main page
@@ -96,6 +97,77 @@ export default function FaceDetector() {
 
         loadModels();
     }, []);
+
+    // Check if photo saved today
+    useEffect(() => {
+        const checkTodayPhoto = async () => {
+            const today = new Date().toISOString().split('T')[0];
+            const db = await openDailyPhotoDB();
+            const tx = db.transaction('photos', 'readonly');
+            const store = tx.objectStore('photos');
+            const photo = await store.get(today);
+            setPhotoSavedToday(!!photo);
+        };
+        checkTodayPhoto();
+    }, []);
+
+    const openDailyPhotoDB = (): Promise<IDBDatabase> => {
+        return new Promise((resolve, reject) => {
+            const request = indexedDB.open('VisionAstralDB', 1);
+            request.onerror = () => reject(request.error);
+            request.onsuccess = () => resolve(request.result);
+            request.onupgradeneeded = (event) => {
+                const db = (event.target as IDBOpenDBRequest).result;
+                if (!db.objectStoreNames.contains('photos')) {
+                    db.createObjectStore('photos', { keyPath: 'date' });
+                }
+            };
+        });
+    };
+
+    const saveDailyPhoto = async () => {
+        const canvas = canvasRef.current;
+        const video = videoRef.current;
+        if (!canvas || !video || !identifiedMetadata) return;
+
+        const today = new Date().toISOString().split('T')[0];
+
+        // Create a temporary canvas to capture the full scene
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = canvas.width;
+        tempCanvas.height = canvas.height;
+        const ctx = tempCanvas.getContext('2d');
+        if (!ctx) return;
+
+        // Draw video frame
+        ctx.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height);
+        // Draw overlay (face detection boxes)
+        ctx.drawImage(canvas, 0, 0);
+
+        const photoData = tempCanvas.toDataURL('image/jpeg', 0.8);
+
+        const photoEntry = {
+            date: today,
+            photo: photoData,
+            emotions: emotionHistoryRef.current[emotionHistoryRef.current.length - 1],
+            brainSide: brainSide,
+            facialLines: facialLines,
+            zodiac: identifiedMetadata.zodiac,
+            name: identifiedMetadata.name || 'Unknown'
+        };
+
+        try {
+            const db = await openDailyPhotoDB();
+            const tx = db.transaction('photos', 'readwrite');
+            const store = tx.objectStore('photos');
+            await store.put(photoEntry);
+            setPhotoSavedToday(true);
+            alert('Foto del día guardada!');
+        } catch (error) {
+            console.error('Error saving photo:', error);
+            alert('Error al guardar la foto');
+        }
+    };
 
     const saveToLocalStorage = (descriptors: faceapi.LabeledFaceDescriptors[]) => {
         const serializable = descriptors.map(d => {
@@ -174,6 +246,51 @@ export default function FaceDetector() {
         return "";
     };
 
+    const getLifePathNumber = (dateStr: string): number => {
+        if (!dateStr) return 0;
+        const date = new Date(dateStr);
+        const day = date.getDate();
+        const month = date.getMonth() + 1;
+        const year = date.getFullYear();
+
+        // Sum all digits
+        const sumDigits = (n: number): number => {
+            let sum = 0;
+            while (n > 0) {
+                sum += n % 10;
+                n = Math.floor(n / 10);
+            }
+            return sum;
+        };
+
+        let total = sumDigits(day) + sumDigits(month) + sumDigits(year);
+
+        // Reduce to single digit (except master numbers 11, 22, 33)
+        while (total > 9 && total !== 11 && total !== 22 && total !== 33) {
+            total = sumDigits(total);
+        }
+
+        return total;
+    };
+
+    const getLifePurpose = (lifePathNumber: number): string => {
+        const purposes: Record<number, string> = {
+            1: "Líder e Innovador - Tu propósito es abrir nuevos caminos",
+            2: "Diplomático y Unificador - Tu misión es crear armonía",
+            3: "Creador y Comunicador - Expresas la belleza del universo",
+            4: "Constructor y Organizador - Creas estructuras sólidas",
+            5: "Explorador y Libertador - Rompes límites y expandes horizontes",
+            6: "Sanador y Protector - Cuidas y nutres a otros",
+            7: "Místico y Buscador - Descubres verdades ocultas",
+            8: "Manifestador y Líder Material - Transformas la realidad",
+            9: "Humanitario y Sabio - Sirves al bien mayor",
+            11: "Visionario Espiritual - Iluminas el camino de otros",
+            22: "Maestro Constructor - Materializas grandes visiones",
+            33: "Maestro Sanador - Elevas la consciencia colectiva"
+        };
+        return purposes[lifePathNumber] || "Viajero del Alma";
+    };
+
     const startVideo = () => {
         navigator.mediaDevices
             .getUserMedia({ video: {} })
@@ -192,22 +309,42 @@ export default function FaceDetector() {
     const analyzeBrainSide = (landmarks: faceapi.FaceLandmarks68) => {
         const leftEye = landmarks.getLeftEye();
         const rightEye = landmarks.getRightEye();
-        const nose = landmarks.getNose();
-        const jaw = landmarks.getJawOutline();
 
-        // Very simplified logic for "Aesthetic/Mystical" predominance
-        // We look at subtle differences in eye size or jaw tilt
         const leftEyeWidth = leftEye[3].x - leftEye[0].x;
         const rightEyeWidth = rightEye[3].x - rightEye[0].x;
 
-        const diff = (leftEyeWidth - rightEyeWidth) / ((leftEyeWidth + rightEyeWidth) / 2);
+        const currentDiff = (leftEyeWidth - rightEyeWidth) / ((leftEyeWidth + rightEyeWidth) / 2);
 
-        if (Math.abs(diff) < 0.02) {
+        // Get or create personal baseline
+        const personName = identifiedMetadata?.name || 'Unknown';
+        const baselineKey = `brainBaseline_${personName}`;
+        const savedBaseline = localStorage.getItem(baselineKey);
+
+        let baseline = 0;
+        let calibrationCount = 0;
+
+        if (savedBaseline) {
+            const data = JSON.parse(savedBaseline);
+            baseline = data.baseline;
+            calibrationCount = data.count;
+        }
+
+        // Update baseline (rolling average of first 10 readings)
+        if (calibrationCount < 10) {
+            baseline = (baseline * calibrationCount + currentDiff) / (calibrationCount + 1);
+            calibrationCount++;
+            localStorage.setItem(baselineKey, JSON.stringify({ baseline, count: calibrationCount }));
+        }
+
+        // Calculate relative difference from personal baseline
+        const relativeDiff = currentDiff - baseline;
+
+        if (Math.abs(relativeDiff) < 0.02) {
             return { side: 'EQUILIBRADO', score: 50 };
         }
-        return diff > 0
-            ? { side: 'DERECHO (CREATIVO)', score: Math.min(100, 50 + diff * 500) }
-            : { side: 'IZQUIERDO (LÓGICO)', score: Math.min(100, 50 - diff * 500) };
+        return relativeDiff > 0
+            ? { side: 'DERECHO (CREATIVO)', score: Math.min(100, 50 + relativeDiff * 500) }
+            : { side: 'IZQUIERDO (LÓGICO)', score: Math.min(100, 50 - relativeDiff * 500) };
     };
 
     const analyzeEmotionsToLines = (expressions: faceapi.FaceExpressions) => {
@@ -219,23 +356,68 @@ export default function FaceDetector() {
         const entries = Object.entries(expressions);
         const dominant = entries.reduce((a, b) => a[1] > b[1] ? a : b)[0];
 
-        const readings: Record<string, string> = {
-            neutral: "Líneas de equilibrio ancestral. Refleja una paz interior profunda.",
-            happy: "Surcos de luz solar. Irradia una energía vital contagiosa.",
-            sad: "Senderos de sabiduría líquida. Capacidad de sentir el universo.",
-            angry: "Trazos de fuego volcánico. Poder de transmutación y voluntad.",
-            fearful: "Vibraciones de alerta cósmica. Intuición altamente desarrollada.",
-            disgusted: "Filtros de discernimiento etéreo. Protege su esencia con rigor.",
-            surprised: "Aperturas al asombro infinito. Siempre listo para lo nuevo."
+        // Get personalized reading history to avoid repetition
+        const personName = identifiedMetadata?.name || 'Unknown';
+        const historyKey = `lineHistory_${personName}`;
+        const savedHistory = localStorage.getItem(historyKey);
+        const history: string[] = savedHistory ? JSON.parse(savedHistory) : [];
+
+        const readings: Record<string, string[]> = {
+            neutral: [
+                "Líneas de equilibrio ancestral. Refleja una paz interior profunda.",
+                "Calma etérea en tu rostro. Tu centro está alineado con el cosmos.",
+                "Serenidad cristalina. Hoy tu esencia fluye sin resistencia."
+            ],
+            happy: [
+                "Surcos de luz solar. Irradia una energía vital contagiosa.",
+                "Vibraciones de alegría cósmica. Tu aura brilla intensamente.",
+                "Ondas de felicidad pura. El universo sonríe contigo."
+            ],
+            sad: [
+                "Senderos de sabiduría líquida. Capacidad de sentir el universo.",
+                "Profundidad emocional sagrada. Tus aguas internas se purifican.",
+                "Introspección sanadora. Tu alma se reconecta con su esencia."
+            ],
+            angry: [
+                "Trazos de fuego volcánico. Poder de transmutación y voluntad.",
+                "Energía de transformación intensa. Tu fuerza interior despierta.",
+                "Llamas de determinación. Canalizas el poder del guerrero."
+            ],
+            fearful: [
+                "Vibraciones de alerta cósmica. Intuición altamente desarrollada.",
+                "Sensibilidad etérea elevada. Percibes lo que otros no ven.",
+                "Antenas psíquicas activadas. Tu protección interna se fortalece."
+            ],
+            disgusted: [
+                "Filtros de discernimiento etéreo. Protege su esencia con rigor.",
+                "Barreras de pureza activadas. Rechazas lo que no resuena.",
+                "Selección energética consciente. Tu intuición te guía."
+            ],
+            surprised: [
+                "Aperturas al asombro infinito. Siempre listo para lo nuevo.",
+                "Expansión de consciencia súbita. El universo te revela secretos.",
+                "Receptividad máxima. Tu mente abraza lo inesperado."
+            ]
         };
 
-        return readings[dominant] || "Líneas en flujo constante. Aura en transformación.";
+        const options = readings[dominant] || ["Líneas en flujo constante. Aura en transformación."];
+
+        // Filter out recently used readings
+        const available = options.filter(r => !history.includes(r));
+        const selected = available.length > 0 ? available[Math.floor(Math.random() * available.length)] : options[0];
+
+        // Update history (keep last 5)
+        history.push(selected);
+        if (history.length > 5) history.shift();
+        localStorage.setItem(historyKey, JSON.stringify(history));
+
+        return selected;
     };
 
     const generateAdvice = () => {
         if (!identifiedMetadata) return;
 
-        const { zodiac } = identifiedMetadata;
+        const { zodiac, birthDate } = identifiedMetadata;
         const expressions = emotionHistoryRef.current[emotionHistoryRef.current.length - 1];
         if (!expressions) return;
 
@@ -253,29 +435,33 @@ export default function FaceDetector() {
         const brainInfo = brainSide?.side.includes("DERECHO") ? "intuición creativa" :
             brainSide?.side.includes("IZQUIERDO") ? "razonamiento lógico" : "equilibrio mental";
 
+        // Get life purpose
+        const lifePathNum = getLifePathNumber(birthDate);
+        const lifePurpose = getLifePurpose(lifePathNum);
+
         const advices: Record<string, string[]> = {
             neutral: [
-                "Tu centro está firme. Es un buen momento para tomar decisiones importantes desde la calma.",
-                "Esa serenidad es tu mayor poder hoy. Observa antes de actuar."
+                `Tu ${lifePurpose.toLowerCase()}. Hoy, desde la calma, toma decisiones alineadas con tu misión.`,
+                `En serenidad, tu propósito se revela. ${lifePurpose}. Observa antes de actuar.`
             ],
             happy: [
-                "Tu vibración alta atraerá nuevas oportunidades. No dejes de sonreír al universo.",
-                "Comparte esa alegría; es el combustible que tu arquetipo necesita hoy."
+                `Tu vibración alta potencia tu propósito: ${lifePurpose}. Comparte esta energía.`,
+                `La alegría es el combustible de tu misión. ${lifePurpose}. El universo conspira a tu favor.`
             ],
             sad: [
-                "Las aguas profundas de tu ser están sanando. Permítete sentir para liberar.",
-                "Usa este momento de introspección para reconectar con tu esencia más pura."
+                `Las aguas profundas purifican tu camino. ${lifePurpose}. Permítete sentir para evolucionar.`,
+                `Esta introspección te reconecta con tu esencia. ${lifePurpose}. Sana para servir mejor.`
             ],
             angry: [
-                "Usa ese fuego para construir, no para destruir. Canaliza la energía en acción productiva.",
-                "Tu fuerza es inmensa hoy. Domínala y moverás montañas."
+                `Canaliza ese fuego hacia tu propósito: ${lifePurpose}. Transforma la rabia en acción constructiva.`,
+                `Tu fuerza es inmensa. ${lifePurpose}. Usa esta energía para construir, no destruir.`
             ]
         };
 
-        const moodAdvices = advices[dominant] || ["Tu energía está en fase de cambio. Fluye con lo que el día te traiga."];
+        const moodAdvices = advices[dominant] || [`Tu energía está en transformación. ${lifePurpose}. Fluye con el día.`];
         const randomAdvice = moodAdvices[Math.floor(Math.random() * moodAdvices.length)];
 
-        setAdviceText(`Como ${archetype}, tu ${brainInfo} está hoy en sintonía con el cosmos. Tus ${facialLines.charAt(0).toLowerCase() + facialLines.slice(1)} Además: ${randomAdvice}`);
+        setAdviceText(`Como ${archetype}, tu ${brainInfo} está hoy en sintonía con el cosmos. ${randomAdvice}`);
         setShowAdvice(true);
     };
 
@@ -417,63 +603,69 @@ export default function FaceDetector() {
 
             {/* Registration Modal Overlay */}
             {isRegistering && (
-                <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md">
-                    <div className="bg-black border border-accent p-6 rounded-lg shadow-[0_0_20px_rgba(0,240,255,0.3)] w-80">
-                        <h3 className="text-accent font-bold mb-4 font-mono">NEW IDENTITY</h3>
-                        <input
-                            type="text"
-                            placeholder="Enter Name"
-                            value={newFaceName}
-                            onChange={(e) => setNewFaceName(e.target.value)}
-                            className="w-full bg-white/10 border border-white/20 rounded px-3 py-2 text-white mb-2 focus:outline-none focus:border-accent"
-                            autoFocus
-                        />
-                        <div className="grid grid-cols-2 gap-2 mb-2">
-                            <div className="space-y-1">
-                                <label className="text-[8px] text-gray-400 font-mono uppercase">Fecha Nacimiento</label>
-                                <input
-                                    type="date"
-                                    value={birthDate}
-                                    onChange={(e) => setBirthDate(e.target.value)}
-                                    className="w-full bg-white/10 border border-white/20 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-accent"
-                                />
-                            </div>
-                            <div className="space-y-1">
-                                <label className="text-[8px] text-gray-400 font-mono uppercase">Hora (Opcional)</label>
-                                <input
-                                    type="time"
-                                    value={birthTime}
-                                    onChange={(e) => setBirthTime(e.target.value)}
-                                    className="w-full bg-white/10 border border-white/20 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-accent"
-                                />
-                            </div>
+                <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md p-4">
+                    <div className="bg-black border border-accent rounded-lg shadow-[0_0_20px_rgba(0,240,255,0.3)] w-full max-w-sm max-h-[85vh] flex flex-col">
+                        <div className="p-4 border-b border-accent/30">
+                            <h3 className="text-accent font-bold font-mono text-sm">NEW IDENTITY</h3>
                         </div>
-                        <div className="space-y-1 mb-4">
-                            <label className="text-[8px] text-gray-400 font-mono uppercase">Lugar de Nacimiento</label>
+
+                        <div className="overflow-y-auto flex-1 p-4 space-y-3">
                             <input
                                 type="text"
-                                placeholder="Ciudad, País"
-                                value={birthPlace}
-                                onChange={(e) => setBirthPlace(e.target.value)}
-                                className="w-full bg-white/10 border border-white/20 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-accent"
+                                placeholder="Enter Name"
+                                value={newFaceName}
+                                onChange={(e) => setNewFaceName(e.target.value)}
+                                className="w-full bg-white/10 border border-white/20 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-accent"
+                                autoFocus
                             />
+                            <div className="grid grid-cols-2 gap-2">
+                                <div className="space-y-1">
+                                    <label className="text-[8px] text-gray-400 font-mono uppercase">Fecha Nacimiento</label>
+                                    <input
+                                        type="date"
+                                        value={birthDate}
+                                        onChange={(e) => setBirthDate(e.target.value)}
+                                        className="w-full bg-white/10 border border-white/20 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-accent"
+                                    />
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-[8px] text-gray-400 font-mono uppercase">Hora (Opcional)</label>
+                                    <input
+                                        type="time"
+                                        value={birthTime}
+                                        onChange={(e) => setBirthTime(e.target.value)}
+                                        className="w-full bg-white/10 border border-white/20 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-accent"
+                                    />
+                                </div>
+                            </div>
+                            <div className="space-y-1">
+                                <label className="text-[8px] text-gray-400 font-mono uppercase">Lugar de Nacimiento</label>
+                                <input
+                                    type="text"
+                                    placeholder="Ciudad, País"
+                                    value={birthPlace}
+                                    onChange={(e) => setBirthPlace(e.target.value)}
+                                    className="w-full bg-white/10 border border-white/20 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-accent"
+                                />
+                            </div>
+                            {labeledDescriptors.some(d => d.label === newFaceName.trim()) && (
+                                <p className="text-xs text-yellow-400 font-mono">
+                                    ⚠ UPDATING EXISTING ID DATA
+                                </p>
+                            )}
                         </div>
-                        {labeledDescriptors.some(d => d.label === newFaceName.trim()) && (
-                            <p className="text-xs text-yellow-400 mb-4 font-mono">
-                                ⚠ UPDATING EXISTING ID DATA
-                            </p>
-                        )}
-                        <div className="flex gap-2 justify-end">
+
+                        <div className="p-4 border-t border-accent/30 flex gap-2 justify-end bg-black">
                             <button
                                 onClick={() => setIsRegistering(false)}
-                                className="px-4 py-2 text-sm text-gray-400 hover:text-white"
+                                className="px-4 py-2 text-sm text-gray-400 hover:text-white transition-colors"
                             >
                                 CANCEL
                             </button>
                             <button
                                 onClick={handleRegisterFace}
                                 disabled={!newFaceName.trim()}
-                                className="px-4 py-2 bg-accent/20 text-accent border border-accent rounded hover:bg-accent/40 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                                className="px-4 py-2 bg-accent/20 text-accent border border-accent rounded hover:bg-accent/40 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 text-sm font-bold transition-colors"
                             >
                                 <Save className="w-4 h-4" /> SAVE
                             </button>
@@ -581,13 +773,27 @@ export default function FaceDetector() {
 
             {/* Add Button */}
             {!isRegistering && !initializing && facesDetectedDisplay === 1 && (
-                <button
-                    onClick={() => setIsRegistering(true)}
-                    className="absolute bottom-6 right-6 z-20 bg-accent text-black p-3 rounded-full hover:scale-110 transition-transform shadow-[0_0_15px_var(--accent)]"
-                    title="Register Face"
-                >
-                    <Plus className="w-6 h-6" />
-                </button>
+                <div className="absolute bottom-6 right-6 z-20 flex gap-3">
+                    {identifiedMetadata && !photoSavedToday && (
+                        <button
+                            onClick={saveDailyPhoto}
+                            className="bg-green-500/80 text-white p-3 rounded-full hover:scale-110 transition-transform shadow-[0_0_15px_rgba(34,197,94,0.6)]"
+                            title="Guardar foto del día"
+                        >
+                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                        </button>
+                    )}
+                    <button
+                        onClick={() => setIsRegistering(true)}
+                        className="bg-accent text-black p-3 rounded-full hover:scale-110 transition-transform shadow-[0_0_15px_var(--accent)]"
+                        title="Register Face"
+                    >
+                        <Plus className="w-6 h-6" />
+                    </button>
+                </div>
             )}
         </div>
     );

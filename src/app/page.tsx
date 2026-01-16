@@ -53,21 +53,61 @@ function ConnectionStatus() {
   }, []);
 
   return (
-    <div className="grid grid-cols-3 gap-4 w-full max-w-4xl opacity-50">
-      <div className="p-4 border border-white/10 rounded bg-white/5 backdrop-blur-sm text-center">
-        <div className="text-xs text-gray-400 font-mono mb-1">LATENCY</div>
-        <div className="text-accent font-bold">12ms</div>
-      </div>
-      <div className="p-4 border border-white/10 rounded bg-white/5 backdrop-blur-sm text-center">
-        <div className="text-xs text-gray-400 font-mono mb-1">ACCURACY</div>
-        <div className="text-accent font-bold">99.8%</div>
-      </div>
-      <div className="p-4 border border-white/10 rounded bg-white/5 backdrop-blur-sm text-center">
-        <div className="text-xs text-gray-400 font-mono mb-1">STATUS</div>
-        <div className={`font-bold ${isOnline ? 'text-green-400 animate-pulse' : 'text-red-500'}`}>
-          {isOnline ? 'ONLINE' : 'OFFLINE'}
+    <div className="flex flex-col gap-4 w-full max-w-4xl">
+      <UpdateNotification />
+      <div className="grid grid-cols-3 gap-4 opacity-50">
+        <div className="p-4 border border-white/10 rounded bg-white/5 backdrop-blur-sm text-center">
+          <div className="text-xs text-gray-400 font-mono mb-1">LATENCY</div>
+          <div className="text-accent font-bold">12ms</div>
+        </div>
+        <div className="p-4 border border-white/10 rounded bg-white/5 backdrop-blur-sm text-center">
+          <div className="text-xs text-gray-400 font-mono mb-1">ACCURACY</div>
+          <div className="text-accent font-bold">99.8%</div>
+        </div>
+        <div className="p-4 border border-white/10 rounded bg-white/5 backdrop-blur-sm text-center">
+          <div className="text-xs text-gray-400 font-mono mb-1">STATUS</div>
+          <div className={`font-bold ${isOnline ? 'text-green-400 animate-pulse' : 'text-red-500'}`}>
+            {isOnline ? 'ONLINE' : 'OFFLINE'}
+          </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function UpdateNotification() {
+  const [updateAvailable, setUpdateAvailable] = React.useState(false);
+
+  React.useEffect(() => {
+    if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+      const sw = navigator.serviceWorker;
+
+      const onUpdate = () => {
+        setUpdateAvailable(true);
+      };
+
+      sw.addEventListener('controllerchange', () => {
+        window.location.reload();
+      });
+
+      // Check if there is already a waiting worker
+      sw.getRegistration().then(reg => {
+        if (reg?.waiting) onUpdate();
+      });
+    }
+  }, []);
+
+  if (!updateAvailable) return null;
+
+  return (
+    <div className="w-full p-3 bg-accent/20 border border-accent/40 rounded-lg flex items-center justify-between backdrop-blur-md animate-bounce">
+      <span className="text-accent text-xs font-mono">NUEVA VERSIÓN ASTRONÁUTICA DISPONIBLE</span>
+      <button
+        onClick={() => window.location.reload()}
+        className="px-3 py-1 bg-accent text-black text-[10px] font-bold rounded uppercase hover:bg-white transition-colors"
+      >
+        ACTUALIZAR AHORA
+      </button>
     </div>
   );
 }
